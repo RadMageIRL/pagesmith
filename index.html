@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark light">
+  <meta name="description" content="PageSmith - Shape your PDFs. Merge, split, reorder, rotate and annotate PDFs privately in your browser. No uploads, no accounts.">
+  <meta name="referrer" content="no-referrer">
+  <link rel="icon" type="image/svg+xml" href="./favicon.svg">
+  <link rel="apple-touch-icon" href="./icons/icon-192.png">
+  <link rel="manifest" href="./manifest.webmanifest">
+  <meta name="theme-color" content="#101311">
+  <title>PageSmith - Shape your PDFs</title>
+  <script>
+    // Applied before first paint so a stored theme never flashes the wrong colors.
+    try { var t = localStorage.getItem('pagesmith_theme'); if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; } catch (e) {}
+  </script>
+</head>
+<body>
+  <div class="shell" id="shell">
+    <header class="topbar">
+      <div class="brand">
+        <button class="icon-button mobile-only" id="pages-toggle" type="button" aria-controls="sidebar" aria-expanded="false" aria-label="Show pages">Pages</button>
+        <h1>pagesmith</h1>
+        <span class="tagline">shape your pdfs</span>
+      </div>
+      <nav class="toolbar" aria-label="Document">
+        <button class="button" id="open-button" type="button" title="Open a PDF (Ctrl+O)">Open</button>
+        <button class="button" id="add-button" type="button" title="Add pages from another PDF" disabled>+ Add PDF</button>
+        <span class="toolbar-sep" aria-hidden="true"></span>
+        <button class="icon-button" id="undo-button" type="button" title="Undo (Ctrl+Z)" aria-label="Undo" disabled>↶</button>
+        <button class="icon-button" id="redo-button" type="button" title="Redo (Ctrl+Y)" aria-label="Redo" disabled>↷</button>
+        <span class="toolbar-sep" aria-hidden="true"></span>
+        <button class="button desktop-only" id="search-button" type="button" title="Search text (Ctrl+F)" disabled>Search</button>
+        <button class="button primary" id="export-button" type="button" title="Save as a new PDF (Ctrl+S)" disabled>Export</button>
+        <button class="button desktop-only" id="install-button" type="button" title="Install PageSmith as an app" hidden>Install</button>
+        <button class="button desktop-only" id="theme-toggle" type="button">Theme</button>
+        <button class="icon-button" id="about-button" type="button" aria-label="About PageSmith and keyboard shortcuts" title="About">?</button>
+        <button class="icon-button mobile-only" id="panel-toggle" type="button" aria-controls="panel" aria-expanded="false" aria-label="Show tools">Tools</button>
+      </nav>
+    </header>
+
+    <div class="workspace" id="workspace">
+      <aside class="sidebar" id="sidebar" aria-label="Pages">
+        <div class="sidebar-head">
+          <span class="section-title">pages</span>
+          <span class="count" id="page-count-label">0</span>
+          <span class="spacer"></span>
+          <button class="link-button" id="select-all" type="button">all</button>
+          <button class="link-button" id="select-none" type="button">none</button>
+        </div>
+        <ol class="thumbs" id="thumbs" role="listbox" aria-multiselectable="true" aria-label="Page thumbnails. Use arrow keys to move, Shift to extend, Alt+arrows to reorder."></ol>
+      </aside>
+
+      <main class="stage" id="stage" tabindex="-1">
+        <div class="search-bar" id="search-bar" role="search" hidden>
+          <input type="search" id="search-input" placeholder="search text" autocomplete="off" spellcheck="false" aria-label="Search text in the document">
+          <span class="search-count" id="search-count" aria-live="polite"></span>
+          <button class="icon-button small" id="search-prev" type="button" aria-label="Previous match" title="Previous (Shift+Enter)">↑</button>
+          <button class="icon-button small" id="search-next" type="button" aria-label="Next match" title="Next (Enter)">↓</button>
+          <button class="icon-button small" id="search-close" type="button" aria-label="Close search" title="Close (Esc)">×</button>
+          <p class="search-note" id="search-note" hidden></p>
+        </div>
+        <section class="empty-state" id="empty-state">
+          <div class="drop-target" id="drop-target">
+            <p class="drop-title">Drop PDFs here</p>
+            <p class="drop-sub">or</p>
+            <button class="button primary" id="empty-open" type="button">Choose files</button>
+            <p class="privacy"><span class="dot" aria-hidden="true">●</span> Your PDFs stay in your browser.</p>
+            <ul class="feature-list">
+              <li>reorder, rotate &amp; delete pages</li>
+              <li>merge files &amp; split by ranges</li>
+              <li>add text, signatures &amp; highlights</li>
+            </ul>
+          </div>
+        </section>
+        <div class="pages-view" id="pages-view" hidden></div>
+      </main>
+
+      <aside class="panel" id="panel" aria-label="Tools"></aside>
+    </div>
+
+    <footer class="statusbar">
+      <span id="status-file" class="status-file">no document</span>
+      <span id="status-pages" class="page-jump"><span id="status-pages-label">0 pages</span><span id="page-jump-wrap" hidden>page <input id="page-jump" type="text" inputmode="numeric" autocomplete="off" aria-label="Go to page (Ctrl+G)" title="Go to page (Ctrl+G)"> of <span id="page-total">0</span></span></span>
+      <span id="status-selected" class="desktop-only">0 selected</span>
+      <span class="zoom" role="group" aria-label="Zoom">
+        <button class="icon-button small" id="zoom-out" type="button" aria-label="Zoom out" title="Zoom out (-)">−</button>
+        <button class="link-button" id="zoom-label" type="button" title="Actual size (1)">100%</button>
+        <button class="icon-button small" id="zoom-in" type="button" aria-label="Zoom in" title="Zoom in (+)">+</button>
+        <button class="link-button" id="fit-width" type="button" title="Fit width (0)" aria-pressed="true">width</button>
+        <button class="link-button" id="fit-page" type="button" title="Fit page (9)" aria-pressed="false">page</button>
+      </span>
+      <span class="spacer"></span>
+      <span class="privacy-note" title="PageSmith never uploads your files. Everything happens on this device."><span class="dot" aria-hidden="true">●</span> Your PDFs stay in your browser.</span>
+    </footer>
+  </div>
+
+  <div class="drop-veil" id="drop-veil" aria-hidden="true"><span>Drop PDFs to add them</span></div>
+
+  <div class="busy" id="busy" hidden role="status" aria-live="polite">
+    <div class="busy-card">
+      <span class="busy-label" id="busy-label">Working…</span>
+      <span class="progress"><span id="busy-bar"></span></span>
+      <div class="busy-actions"><button class="button" id="busy-cancel" type="button" hidden>Cancel</button></div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <dialog id="confirm-dialog">
+    <form method="dialog" class="modal-form">
+      <h2 class="modal-heading" id="confirm-title">Are you sure?</h2>
+      <p class="about-copy" id="confirm-body"></p>
+      <div class="modal-actions">
+        <span class="spacer"></span>
+        <button class="button" value="cancel" type="submit">Cancel</button>
+        <button class="button danger" id="confirm-ok" value="ok" type="submit">Continue</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="password-dialog">
+    <form method="dialog" class="modal-form" id="password-form">
+      <h2 class="modal-heading">Password required</h2>
+      <p class="about-copy"><strong id="password-file"></strong> is password-protected. Enter its password to open it. The password is used only on this device and is never stored.</p>
+      <label class="field">Password<input type="password" id="password-input" autocomplete="off" spellcheck="false"></label>
+      <p class="hint warn" id="password-error" hidden>That password is not correct. Try again.</p>
+      <div class="modal-actions">
+        <span class="spacer"></span>
+        <button class="button" value="cancel" type="submit" formnovalidate>Skip file</button>
+        <button class="button primary" value="ok" type="submit">Unlock</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div class="update-bar" id="update-bar" role="status" hidden>
+    <span>A new version of PageSmith is ready.</span>
+    <button class="button primary" id="update-reload" type="button">Reload</button>
+    <button class="link-button" id="update-later" type="button">later</button>
+  </div>
+
+  <dialog id="about-dialog">
+    <form method="dialog" class="modal-form">
+      <h2 class="modal-heading">pagesmith <span class="muted">v0.2.0</span></h2>
+      <p class="about-copy"><strong>Shape your PDFs.</strong> PageSmith is a free PDF toolkit that runs entirely on this device. Files are read by your browser and never uploaded; there are no accounts, trackers, or watermarks.</p>
+      <p class="about-copy">Text, signatures and highlights are added <strong>on top</strong> of a page. Editing the PDF's existing text isn't supported yet.</p>
+      <p class="about-copy about-links">Free software under the GNU General Public License, version 3. <a href="LICENSE.txt" target="_blank" rel="noopener">License</a> · <a href="THIRD-PARTY-NOTICES.txt" target="_blank" rel="noopener">Third-party notices</a> · <a href="https://github.com/RadMageIRL/pagesmith" target="_blank" rel="noopener noreferrer">Source code</a></p>
+      <h3 class="about-subhead">shortcuts</h3>
+      <div class="about-scroll">
+      <table class="about-shortcuts">
+        <tr><td><span class="shortcut">Ctrl</span> <span class="shortcut">O</span></td><td>open</td></tr>
+        <tr><td><span class="shortcut">Ctrl</span> <span class="shortcut">S</span></td><td>export</td></tr>
+        <tr><td><span class="shortcut">Ctrl</span> <span class="shortcut">Z</span> / <span class="shortcut">Y</span></td><td>undo / redo</td></tr>
+        <tr><td><span class="shortcut">Ctrl</span> <span class="shortcut">F</span></td><td>search text (Enter / Shift+Enter: next / previous)</td></tr>
+        <tr><td><span class="shortcut">Ctrl</span> <span class="shortcut">G</span></td><td>go to page</td></tr>
+        <tr><td><span class="shortcut">Ctrl</span> <span class="shortcut">A</span></td><td>select all pages</td></tr>
+        <tr><td><span class="shortcut">↑</span> <span class="shortcut">↓</span> (+ <span class="shortcut">Shift</span>)</td><td>move / extend selection</td></tr>
+        <tr><td><span class="shortcut">PgUp</span> <span class="shortcut">PgDn</span> <span class="shortcut">Home</span> <span class="shortcut">End</span></td><td>previous / next / first / last page</td></tr>
+        <tr><td><span class="shortcut">Alt</span> <span class="shortcut">↑</span> <span class="shortcut">↓</span></td><td>move selected pages</td></tr>
+        <tr><td><span class="shortcut">[</span> <span class="shortcut">]</span></td><td>rotate left / right</td></tr>
+        <tr><td><span class="shortcut">B</span></td><td>insert blank page after current</td></tr>
+        <tr><td><span class="shortcut">T</span> <span class="shortcut">H</span></td><td>add text / highlight</td></tr>
+        <tr><td><span class="shortcut">Ctrl</span> <span class="shortcut">D</span></td><td>duplicate selected item</td></tr>
+        <tr><td><span class="shortcut">Del</span></td><td>delete selected pages or item</td></tr>
+        <tr><td><span class="shortcut">+</span> <span class="shortcut">−</span></td><td>zoom in / out</td></tr>
+        <tr><td><span class="shortcut">0</span> <span class="shortcut">9</span> <span class="shortcut">1</span></td><td>fit width / fit page / actual size</td></tr>
+        <tr><td><span class="shortcut">Esc</span></td><td>deselect / close</td></tr>
+      </table>
+      </div>
+      <div class="modal-actions">
+        <button class="button" id="theme-toggle-dialog" type="button">Theme</button>
+        <span class="spacer"></span>
+        <button class="button primary" value="close" type="submit">Close</button>
+      </div>
+    </form>
+  </dialog>
+
+  <input type="file" id="open-input" accept="application/pdf,.pdf" multiple hidden>
+  <input type="file" id="add-input" accept="application/pdf,.pdf" multiple hidden>
+  <input type="file" id="image-input" accept="image/png,image/jpeg" hidden>
+
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>

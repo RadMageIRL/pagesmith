@@ -1,0 +1,39 @@
+{
+  "name": "pagesmith",
+  "version": "0.2.0",
+  "description": "PageSmith - Shape your PDFs. A free, private PDF toolkit that runs entirely in your browser.",
+  "license": "GPL-3.0-only",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "assets": "node scripts/copy-pdfjs-assets.mjs",
+    "predev": "npm run assets",
+    "dev": "vite",
+    "prebuild": "npm run assets",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview --port 4173 --strictPort",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "playwright test --project desktop --project mobile",
+    "test:all": "npm run test && npm run build && npm run test:e2e",
+    "test:perf": "playwright test --project perf --workers 1"
+  },
+  "dependencies": {
+    "@cantoo/fontkit": "^2.0.12",
+    "@cantoo/pdf-lib": "^2.11.1",
+    "fflate": "^0.8.3",
+    "html-entities": "^2.6.0",
+    "pdfjs-dist": "^6.4.299"
+  },
+  "devDependencies": {
+    "@embedpdf/pdfium": "^2.15.1",
+    "@expo-google-fonts/noto-sans": "^0.4.2",
+    "@neslinesli93/qpdf-wasm": "^0.3.0",
+    "@playwright/test": "^1.64.1",
+    "@types/node": "^26.6.5",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.5",
+    "vitest": "^5.0.5"
+  }
+}
