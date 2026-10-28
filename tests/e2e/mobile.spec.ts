@@ -48,7 +48,8 @@ test('mobile layout has no horizontal overflow and drawers work', async ({ page 
   expect(doc.getPages().map(p => p.getRotation().angle)).toEqual([0, 90, 0, 0, 0]);
 });
 
-test('long-press and drag reorders thumbnails by touch; a quick swipe does not', async ({ page }) => {
+test('long-press and drag reorders thumbnails by touch; a quick swipe does not', async ({ page, browserName }) => {
+  test.skip(browserName !== 'chromium', 'The touch sequence is dispatched through the Chrome DevTools Protocol');
   await page.goto('/');
   await openPdf(page, 'letter-5.pdf');
   await expectPageCount(page, 5);
@@ -85,6 +86,19 @@ test('search is reachable from the tools drawer on phones', async ({ page }) => 
   await page.locator('#search-input').fill('L5');
   await expect(page.locator('#search-count')).toHaveText('1 of 1');
   await expect(page.locator('#page-jump')).toHaveValue('5');
+  expect(await noHorizontalOverflow(page)).toBe(true);
+});
+
+test('an update notice never covers the toolbar on phones', async ({ page }) => {
+  await page.goto('/');
+  await openPdf(page, 'letter-5.pdf');
+  await expectPageCount(page, 5);
+  await page.evaluate(() => { document.getElementById('update-bar')!.hidden = false; });
+  await expect(page.locator('#update-bar')).toBeInViewport();
+  for (const id of ['pages-toggle', 'open-button', 'add-button', 'export-button', 'about-button', 'panel-toggle']) {
+    const onTop = await page.evaluate(id => { const r = document.getElementById(id)!.getBoundingClientRect(); return document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)?.closest('button')?.id; }, id);
+    expect(onTop).toBe(id);
+  }
   expect(await noHorizontalOverflow(page)).toBe(true);
 });
 

@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { PDFDocument } from '@cantoo/pdf-lib';
-import { a4Landscape, latin1, letter, makeCorruptPdf, makeEncryptedPdf, makeHeavyPdf, makeLargePdf, makePdf, makePng, makeScannedPdf } from '../fixtures';
+import { a4Landscape, latin1, letter, makeCorruptPdf, makeEncryptedPdf, makeFormPdf, makeHeavyPdf, makeLinkedPdf, makeLargePdf, makePdf, makePng, makeScannedPdf } from '../fixtures';
 
 export const FIXTURE_DIR = join(import.meta.dirname, '.fixtures');
 
@@ -29,6 +29,10 @@ export default async function globalSetup(): Promise<void> {
     'corrupt.pdf': () => makeCorruptPdf(),
     'not-a-pdf.pdf': () => latin1('just some text pretending to be a pdf'),
     'signature.png': () => makePng(60, 20, [20, 40, 160]),
+    'form.pdf': () => makeFormPdf(),
+    'signed-form.pdf': () => makeFormPdf({ signed: true }),
+    'xfa-form.pdf': () => makeFormPdf({ xfa: true }),
+    'linked.pdf': () => makeLinkedPdf(),
   };
   for (const [name, make] of Object.entries(files)) writeFileSync(join(FIXTURE_DIR, name), await make());
   // Large documents are slow to generate, so they are cached between runs.

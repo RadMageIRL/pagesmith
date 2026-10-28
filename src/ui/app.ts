@@ -25,6 +25,8 @@ const MAX_IMAGE_BYTES = 15 * 1024 * 1024;
 const RELEASE_PAGES_ABOVE = 24;
 const RELEASE_THUMBS_ABOVE = 150;
 const LONG_PRESS_MS = 380;
+/** The page title from index.html, shown again whenever no document is open. */
+const HOME_TITLE = document.title;
 
 type ZoomMode = number | 'fit-width' | 'fit-page';
 
@@ -223,7 +225,12 @@ export class App {
         }
       }
     }
-    if (failures.length) this.toast(failures.join('  ·  '), { error: true, duration: 7000 });
+    // What can't carry over into an export is said when the file opens, not discovered later.
+    const notes = loaded.flatMap(s => [
+      s.form?.xfa ? `“${baseName(s.name)}” has an XFA form: exports keep its standard form fields, not the XFA layer` : '',
+      s.form?.signed ? `“${baseName(s.name)}” is digitally signed: an exported copy is a new file, so the signature won't be valid in it` : '',
+    ]).filter(Boolean);
+    if (failures.length) this.toast([...failures, ...notes].join('  ·  '), { error: true, duration: 7000 + notes.length * 3000 });
     if (cancelled) this.toast('Opening canceled');
     if (!loaded.length) return;
 
@@ -252,7 +259,8 @@ export class App {
     }
     const pageCount = loaded.reduce((n, s) => n + s.pages.length, 0);
     const unlocked = loaded.some(s => s.protection !== 'none');
-    if (!failures.length && !cancelled) this.toast(`${mode === 'append' ? 'Added' : 'Opened'} ${pageCount} page${pageCount === 1 ? '' : 's'}${unlocked ? ' · unlocked for this session' : ''}`);
+    const opened = `${mode === 'append' ? 'Added' : 'Opened'} ${pageCount} page${pageCount === 1 ? '' : 's'}${unlocked ? ' · unlocked for this session' : ''}`;
+    if (!failures.length && !cancelled) this.toast([opened, ...notes].join('  ·  '), notes.length ? { duration: 4000 + notes.length * 5000 } : {});
   }
 
   private registerSource(source: SourceDoc): void {
@@ -773,7 +781,7 @@ export class App {
     $('zoom-label').textContent = hasDoc ? `${Math.round(this.scale / PX_PER_PT * 100)}%` : '-';
     $('fit-width').setAttribute('aria-pressed', String(this.zoom === 'fit-width'));
     $('fit-page').setAttribute('aria-pressed', String(this.zoom === 'fit-page'));
-    document.title = names.length ? `${names[0]} - PageSmith` : 'PageSmith - Shape your PDFs';
+    document.title = names.length ? `${names[0]} - PageSmith` : HOME_TITLE;
   }
 
   /** Creates, reorders, updates and removes page views to match the state, keyed by page id. */

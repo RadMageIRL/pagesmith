@@ -1,4 +1,4 @@
-import { PDFDocument } from '@cantoo/pdf-lib';
+import { PDFDict, PDFDocument, PDFName, PDFNumber } from '@cantoo/pdf-lib';
 import { cleanFileName } from './names';
 import { PdfLoadError, checkCancelled, newId, normalizeRotation, type PageInfo, type Protection, type SourceDoc } from './types';
 
@@ -76,7 +76,14 @@ export async function loadSource(bytes: Uint8Array, name: string, options: LoadO
   if (pages.some(p => !Number.isFinite(p.width) || !Number.isFinite(p.height) || p.width <= 0 || p.height <= 0)) {
     throw new PdfLoadError('corrupt', 'This PDF has a page with invalid dimensions.');
   }
-  return { source: { id: newId('s'), name: cleanFileName(name), pages, protection }, doc };
+  const source: SourceDoc = { id: newId('s'), name: cleanFileName(name), pages, protection };
+  const acroForm = doc.catalog.lookupMaybe(PDFName.of('AcroForm'), PDFDict);
+  if (acroForm) {
+    // SigFlags bit 1: the document contains at least one signature.
+    const sigFlags = acroForm.lookupMaybe(PDFName.of('SigFlags'), PDFNumber)?.asNumber() ?? 0;
+    source.form = { xfa: acroForm.has(PDFName.of('XFA')), signed: (sigFlags & 1) === 1 };
+  }
+  return { source, doc };
 }
 
 /** A one-page document of the given size, used for blank-page insertion. */

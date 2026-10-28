@@ -1,9 +1,10 @@
-import { BlendMode, PDFDocument, PDFName, PDFPage, degrees, rgb, type PDFFont, type PDFImage } from '@cantoo/pdf-lib';
+import { BlendMode, PDFArray, PDFDict, PDFDocument, PDFHexString, PDFName, PDFNull, PDFObjectCopier, PDFPage, PDFPageLeaf, PDFRef, PDFStream, PDFString, degrees, rgb, type PDFFont, type PDFImage, type PDFObject } from '@cantoo/pdf-lib';
 import fontkit from '@cantoo/fontkit';
 import { zipSync } from 'fflate';
 import { checkCancelled, effectiveRotation, type PageInfo, type PageRef } from '../engine/types';
 import { uprightAnchor } from '../overlay/geometry';
 import { TEXT_BASELINE, TEXT_LINE_HEIGHT, clampFontSize, hexToRgb01, type Overlay } from '../overlay/types';
+import { APP_VERSION } from '../version';
 import { TextFont } from './fonts';
 
 export interface SourceHandle {
@@ -22,15 +23,16 @@ export interface ExportOptions {
 }
 
 /**
- * Builds a new PDF from page references. Pages are copied as objects (copyPages), never
- * rasterized, so vector content and selectable text survive. Sources are not modified.
+ * Builds a new PDF from page references. Pages are copied as objects, never rasterized, so vector
+ * content and selectable text survive. Fillable form fields on the exported pages keep working,
+ * and pages that weren't exported never end up in the file. Sources are not modified.
  */
 export async function buildPdf(pages: readonly PageRef[], overlays: readonly Overlay[], lookup: SourceLookup, options: ExportOptions = {}): Promise<Uint8Array> {
   if (!pages.length) throw new Error('There are no pages to export.');
   const { signal } = options;
   const out = await PDFDocument.create({ updateMetadata: false });
   const now = new Date();
-  out.setProducer('PageSmith 0.2.0');
+  out.setProducer(`PageSmith ${APP_VERSION}`);
   out.setCreator('PageSmith');
   out.setCreationDate(now);
   out.setModificationDate(now);
@@ -44,13 +46,15 @@ export async function buildPdf(pages: readonly PageRef[], overlays: readonly Ove
     bySource.set(p.sourceId, list);
   });
   const copied: PDFPage[] = new Array(pages.length);
+  const forms: FormSource[] = [];
   let done = 0;
   for (const [sourceId, positions] of bySource) {
     checkCancelled(signal);
     const source = lookup(sourceId);
     if (!source) throw new Error('A page refers to a document that is no longer open.');
-    const result = await out.copyPages(source.doc, positions.map(i => pages[i].sourceIndex));
+    const { pages: result, copier } = await copyPagesByRef(out, source.doc, positions.map(i => pages[i].sourceIndex));
     result.forEach((page, k) => { copied[positions[k]] = page; });
+    forms.push({ doc: source.doc, copier });
     done += positions.length;
     options.onProgress?.(done / pages.length * 0.6);
   }
@@ -77,10 +81,165 @@ export async function buildPdf(pages: readonly PageRef[], overlays: readonly Ove
     options.onProgress?.(0.6 + (i + 1) / pages.length * 0.2);
   }
   checkCancelled(signal);
-  const bytes = await out.save({ objectsPerTick: 300 });
+  await out.flush();
+  rebuildForm(out, forms);
+  dropForeignPages(out);
+  // Form fields keep the appearances their author made. pdf-lib only redraws fields once its form
+  // API has been used on a document, which export never does; false keeps that from changing.
+  const bytes = await out.save({ objectsPerTick: 300, updateFieldAppearances: false });
   checkCancelled(signal);
   options.onProgress?.(1);
   return bytes;
+}
+
+interface FormSource { doc: PDFDocument; copier: PDFObjectCopier }
+
+/**
+ * Like pdf-lib's copyPages, but each page is copied through its reference. A link or form field
+ * that points at another copied page then lands on that page's copy, instead of pulling in a
+ * second, hidden copy of it.
+ */
+async function copyPagesByRef(out: PDFDocument, src: PDFDocument, indices: number[]): Promise<{ pages: PDFPage[]; copier: PDFObjectCopier }> {
+  await src.flush();
+  const copier = PDFObjectCopier.for(src.context, out.context);
+  const srcPages = src.getPages();
+  const seen = new Set<number>();
+  const pages = indices.map(i => {
+    // The same page twice can't share one object in the page tree, so a repeat gets its own copy.
+    if (seen.has(i)) {
+      const node = copier.copy(srcPages[i].node);
+      return PDFPage.of(node, out.context.register(node), out);
+    }
+    seen.add(i);
+    const ref = copier.copy(srcPages[i].ref);
+    return PDFPage.of(out.context.lookup(ref, PDFDict) as PDFPageLeaf, ref, out);
+  });
+  return { pages, copier };
+}
+
+const AcroForm = PDFName.of('AcroForm');
+const Kids = PDFName.of('Kids');
+const Parent = PDFName.of('Parent');
+
+function isWidget(dict: PDFObject | undefined): dict is PDFDict {
+  return dict instanceof PDFDict && dict.get(PDFName.of('Subtype')) === PDFName.of('Widget');
+}
+
+/**
+ * Restores the interactive form. Copied pages bring their widgets and, through /Parent, the fields
+ * those widgets belong to, but the list of fields lives in the source's /AcroForm, which the new
+ * document doesn't have; without it viewers show the fields as flat pictures. Only fields with a
+ * widget on an exported page are listed, widgets on pages that weren't exported are dropped, and a
+ * field whose name another merged file already uses is renamed so the two stay independent.
+ * XFA is not carried over.
+ */
+function rebuildForm(out: PDFDocument, sources: FormSource[]): void {
+  const ctx = out.context;
+  const withForms = sources.map(s => ({ ...s, form: s.doc.catalog.lookupMaybe(AcroForm, PDFDict) })).filter(s => s.form);
+  if (!withForms.length) return;
+
+  const placed = new Set<PDFRef>();
+  for (const page of out.getPages()) {
+    for (const annot of page.node.Annots()?.asArray() ?? []) if (annot instanceof PDFRef && isWidget(ctx.lookup(annot))) placed.add(annot);
+  }
+  const roots: PDFRef[] = [];
+  for (const widget of placed) {
+    let ref = widget;
+    for (let parent = ctx.lookup(ref, PDFDict).get(Parent); parent instanceof PDFRef && ctx.lookup(parent) instanceof PDFDict; parent = ctx.lookup(ref, PDFDict).get(Parent)) ref = parent;
+    if (!roots.includes(ref)) roots.push(ref);
+  }
+  // Keeps the branches that still end in a placed widget; returns whether anything is left.
+  const prune = (ref: PDFRef): boolean => {
+    const dict = ctx.lookup(ref, PDFDict);
+    const kids = dict.lookupMaybe(Kids, PDFArray);
+    if (!kids) return placed.has(ref);
+    const keep = kids.asArray().filter(k => k instanceof PDFRef && (isWidget(ctx.lookup(k)) && !ctx.lookup(k, PDFDict).has(Kids) ? placed.has(k) : prune(k)));
+    dict.set(Kids, ctx.obj(keep));
+    return keep.length > 0;
+  };
+  const fields = roots.filter(prune);
+
+  const used = new Set<string>();
+  for (const ref of fields) {
+    const dict = ctx.lookup(ref, PDFDict);
+    const name = dict.lookupMaybe(PDFName.of('T'), PDFString, PDFHexString)?.decodeText();
+    if (name === undefined) continue;
+    let unique = name;
+    for (let n = 2; used.has(unique); n++) unique = `${name}_${n}`;
+    used.add(unique);
+    if (unique !== name) dict.set(PDFName.of('T'), PDFHexString.fromText(unique));
+  }
+
+  const acro = ctx.obj({ Fields: fields });
+  const resources = ctx.obj({});
+  for (const { form, copier } of withForms) {
+    const da = form!.get(PDFName.of('DA'));
+    if (da && !acro.has(PDFName.of('DA'))) acro.set(PDFName.of('DA'), copier.copy(da));
+    if (form!.get(PDFName.of('NeedAppearances'))?.toString() === 'true') acro.set(PDFName.of('NeedAppearances'), ctx.obj(true));
+    // Default resources (the fonts fields are typed in): the first file to name a resource keeps it.
+    const dr = form!.lookupMaybe(PDFName.of('DR'), PDFDict);
+    if (!dr) continue;
+    for (const [category, entries] of copier.copy(dr).entries()) {
+      const target = resources.lookupMaybe(category, PDFDict);
+      const incoming = ctx.lookupMaybe(entries, PDFDict);
+      if (!target || !incoming) { if (!resources.has(category)) resources.set(category, entries); continue; }
+      for (const [name, value] of incoming.entries()) if (!target.has(name)) target.set(name, value);
+    }
+  }
+  if (resources.keys().length) acro.set(PDFName.of('DR'), resources);
+  out.catalog.set(AcroForm, ctx.register(acro));
+}
+
+/**
+ * Keeps pages that weren't exported out of the file. A link, form field or comment on an exported
+ * page can point at a page that was left out (or at a comment on one), and copying follows every
+ * such reference, so that page or comment, content and all, would otherwise travel inside the
+ * export where anyone can recover it. Every reference to a page outside the export, and to an
+ * annotation that belongs to one, is cut (it can only have been a dead link or a reply to a comment
+ * that is gone), then every object nothing refers to any more is dropped.
+ */
+function dropForeignPages(out: PDFDocument): void {
+  const ctx = out.context;
+  const kept = new Set(out.getPages().map(p => p.ref));
+  const isPage = (o: PDFObject | undefined) => o instanceof PDFPageLeaf || (o instanceof PDFDict && o.get(PDFName.of('Type')) === PDFName.of('Page'));
+  const annotsOf = (page: PDFObject | undefined) => (page instanceof PDFDict ? page.lookupMaybe(PDFName.of('Annots'), PDFArray)?.asArray() ?? [] : []).filter((a): a is PDFRef => a instanceof PDFRef);
+  const foreignPages = new Set<PDFRef>();
+  for (const [ref, obj] of ctx.enumerateIndirectObjects()) if (isPage(obj) && !kept.has(ref)) foreignPages.add(ref);
+  // An annotation belongs to a left-out page when that page lists it or it names that page as its
+  // own (/P); anything an exported page lists stays.
+  const keptAnnots = new Set([...kept].flatMap(ref => annotsOf(ctx.lookup(ref))));
+  const foreignAnnots = new Set([...foreignPages].flatMap(ref => annotsOf(ctx.lookup(ref))));
+  for (const [ref, obj] of ctx.enumerateIndirectObjects()) {
+    const page = obj instanceof PDFDict ? obj.get(PDFName.of('P')) : undefined;
+    if (page instanceof PDFRef && foreignPages.has(page)) foreignAnnots.add(ref);
+  }
+  for (const ref of keptAnnots) foreignAnnots.delete(ref);
+  const foreign = (value: PDFObject) => value instanceof PDFRef && (foreignPages.has(value) || foreignAnnots.has(value));
+  const reached = new Set<PDFRef>();
+  const queue: PDFObject[] = [ctx.trailerInfo.Root, ctx.trailerInfo.Info].filter((o): o is PDFObject => !!o);
+  while (queue.length) {
+    const item = queue.pop()!;
+    if (item instanceof PDFRef) {
+      if (reached.has(item)) continue;
+      reached.add(item);
+      const target = ctx.lookup(item);
+      if (target) queue.push(target);
+    } else if (item instanceof PDFDict) {
+      for (const [key, value] of item.entries()) {
+        if (foreign(value)) item.delete(key);
+        else queue.push(value);
+      }
+    } else if (item instanceof PDFArray) {
+      for (let i = 0; i < item.size(); i++) {
+        const value = item.get(i);
+        if (foreign(value)) item.set(i, PDFNull);
+        else queue.push(value);
+      }
+    } else if (item instanceof PDFStream) {
+      queue.push(item.dict);
+    }
+  }
+  for (const [ref] of ctx.enumerateIndirectObjects()) if (!reached.has(ref)) ctx.delete(ref);
 }
 
 export interface ZipEntry { name: string; bytes: Uint8Array }

@@ -4,13 +4,27 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark light">
-  <meta name="description" content="PageSmith - Shape your PDFs. Merge, split, reorder, rotate and annotate PDFs privately in your browser. No uploads, no accounts.">
+  <meta name="description" content="Merge, split, reorder, rotate, and annotate PDFs for free in your browser. Private, offline-capable, and open source. No uploads or accounts.">
   <meta name="referrer" content="no-referrer">
   <link rel="icon" type="image/svg+xml" href="./favicon.svg">
   <link rel="apple-touch-icon" href="./icons/icon-192.png">
   <link rel="manifest" href="./manifest.webmanifest">
   <meta name="theme-color" content="#101311">
-  <title>PageSmith - Shape your PDFs</title>
+  <title>PageSmith - Free Private PDF Editor | RadMage Labs</title>
+  <link rel="canonical" href="https://radmagelabs.com/pagesmith/">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="RadMage Labs">
+  <meta property="og:url" content="https://radmagelabs.com/pagesmith/">
+  <meta property="og:title" content="PageSmith: Free Private PDF Editor">
+  <meta property="og:description" content="Merge, split, reorder, rotate, and annotate PDFs in your browser. Private, offline-capable, and open source. No uploads or accounts.">
+  <meta property="og:image" content="https://radmagelabs.com/assets/og/pagesmith.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="PageSmith with a PDF open: page thumbnails, a highlighted heading and a text note on the page, and the tools panel">
+  <meta name="twitter:card" content="summary_large_image">
+  <script type="application/ld+json">
+  {"@context":"https://schema.org","@type":"WebApplication","name":"PageSmith","url":"https://radmagelabs.com/pagesmith/","description":"Merge, split, reorder, rotate, and annotate PDFs for free in your browser. Private, offline-capable, and open source. No uploads or accounts.","applicationCategory":"UtilitiesApplication","operatingSystem":"Any (runs in a web browser)","isAccessibleForFree":true,"offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"softwareVersion":"0.2.1","license":"https://www.gnu.org/licenses/gpl-3.0.html","screenshot":"https://radmagelabs.com/assets/og/pagesmith.png","author":{"@type":"Person","name":"RadMageIRL","url":"https://radmagelabs.com/"},"sameAs":"https://github.com/RadMageIRL/pagesmith"}
+  </script>
   <script>
     // Applied before first paint so a stored theme never flashes the wrong colors.
     try { var t = localStorage.getItem('pagesmith_theme'); if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; } catch (e) {}
@@ -142,10 +156,10 @@
 
   <dialog id="about-dialog">
     <form method="dialog" class="modal-form">
-      <h2 class="modal-heading">pagesmith <span class="muted">v0.2.0</span></h2>
+      <h2 class="modal-heading">pagesmith <span class="muted">v0.2.1</span></h2>
       <p class="about-copy"><strong>Shape your PDFs.</strong> PageSmith is a free PDF toolkit that runs entirely on this device. Files are read by your browser and never uploaded; there are no accounts, trackers, or watermarks.</p>
       <p class="about-copy">Text, signatures and highlights are added <strong>on top</strong> of a page. Editing the PDF's existing text isn't supported yet.</p>
-      <p class="about-copy about-links">Free software under the GNU General Public License, version 3. <a href="LICENSE.txt" target="_blank" rel="noopener">License</a> · <a href="THIRD-PARTY-NOTICES.txt" target="_blank" rel="noopener">Third-party notices</a> · <a href="https://github.com/RadMageIRL/pagesmith" target="_blank" rel="noopener noreferrer">Source code</a></p>
+      <p class="about-copy about-links">Free software under the GNU General Public License, version 3. <a href="LICENSE.txt" target="_blank" rel="noopener">License</a> · <a href="THIRD-PARTY-NOTICES.txt" target="_blank" rel="noopener">Third-party notices</a> · <a href="https://github.com/RadMageIRL/pagesmith" target="_blank" rel="noopener noreferrer">Source code on GitHub</a> · <a href="https://radmagelabs.com/" target="_blank" rel="noopener">More from RadMage Labs</a></p>
       <h3 class="about-subhead">shortcuts</h3>
       <div class="about-scroll">
       <table class="about-shortcuts">

@@ -15,7 +15,8 @@ test('shows the empty state with the privacy statement', async ({ page }) => {
 test('opens a multi-page PDF, renders thumbnails and preview, and makes no network requests for it', async ({ page }) => {
   const errors = watchErrors(page);
   const external: string[] = [];
-  page.on('request', req => { if (!req.url().startsWith('http://localhost:4173')) external.push(req.url()); });
+  // blob: and data: URLs are the page's own in-memory objects, not network requests.
+  page.on('request', req => { const url = req.url(); if (!['http://localhost:4173/', 'blob:', 'data:'].some(prefix => url.startsWith(prefix))) external.push(url); });
   await openPdf(page, 'letter-5.pdf');
   await expectPageCount(page, 5);
   await expect(page.locator('#status-file')).toHaveText('letter-5.pdf');
@@ -182,6 +183,33 @@ test('extracted pages follow the current page order, not the original file order
   await thumbs(page).nth(2).click({ modifiers: ['Control'] });
   const extract = await clickDownload(page, () => page.getByRole('button', { name: /Extract 2 pages/ }).click());
   expect(await downloadText(extract)).toEqual(['L5', 'L2']);
+});
+
+test('merged fillable forms export with every field still fillable and separate', async ({ page }) => {
+  await openPdf(page, 'form.pdf');
+  await expectPageCount(page, 2);
+  await addPdf(page, 'form.pdf');
+  await expectPageCount(page, 4);
+  const form = (await readDownload(await clickDownload(page, () => page.locator('#export-button').click()))).getForm();
+  const names = ['agree', 'color', 'name', 'notes', 'size'];
+  expect(form.getFields().map(f => f.getName()).sort()).toEqual([...names, ...names.map(n => `${n}_2`)].sort());
+  expect(form.getTextField('name').getText()).toBe('Ada Lovelace');
+  expect(form.getTextField('name_2').getText()).toBe('Ada Lovelace');
+  expect(form.getCheckBox('agree_2').isChecked()).toBe(true);
+});
+
+test('a digitally signed PDF says when it opens that exports cannot keep the signature', async ({ page }) => {
+  await openPdf(page, 'signed-form.pdf');
+  await expectPageCount(page, 2);
+  await expect(page.locator('#toast')).toContainText('Opened 2 pages');
+  await expect(page.locator('#toast')).toContainText('is digitally signed: an exported copy is a new file');
+});
+
+test('an XFA form says when it opens that exports keep only its standard fields', async ({ page }) => {
+  await openPdf(page, 'xfa-form.pdf');
+  await expectPageCount(page, 2);
+  await expect(page.locator('#toast')).toContainText('Opened 2 pages');
+  await expect(page.locator('#toast')).toContainText('has an XFA form: exports keep its standard form fields, not the XFA layer');
 });
 
 test('a file name containing markup is shown as plain text and never runs', async ({ page }) => {

@@ -1,0 +1,5 @@
+# LF everywhere, so a checkout on any system builds the same files (the CSP hashes the inline
+# script, and the service worker version hashes every built file).
+* text=auto eol=lf
+*.png binary
+*.ttf binary

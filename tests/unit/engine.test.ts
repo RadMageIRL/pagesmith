@@ -4,7 +4,7 @@ import { PDFDocument } from '@cantoo/pdf-lib';
 import { MAX_FILE_BYTES, PAGE_SIZES, baseName, cleanFileName, createBlank, hasPdfHeader, loadSource } from '../../src/engine/load';
 import { CancelledError, PdfLoadError } from '../../src/engine/types';
 import { chunkPages, describePages, parseRanges } from '../../src/engine/ranges';
-import { OWNER_PASSWORD, USER_PASSWORD, encryptWithQpdf, latin1, letter, makeCorruptPdf, makeEncryptedPdf, makePdf, makeTruncatedPdf, type EncryptionScheme } from '../fixtures';
+import { OWNER_PASSWORD, USER_PASSWORD, encryptWithQpdf, latin1, letter, makeCorruptPdf, makeEncryptedPdf, makeFormPdf, makePdf, makeTruncatedPdf, type EncryptionScheme } from '../fixtures';
 
 async function loadError(bytes: Uint8Array, password?: string): Promise<PdfLoadError> {
   try {
@@ -48,6 +48,13 @@ describe('loadSource', () => {
   it('rejects corrupt and truncated PDFs without throwing anything else', async () => {
     expect(['corrupt', 'empty']).toContain((await loadError(makeCorruptPdf())).code);
     expect(['corrupt', 'empty']).toContain((await loadError(await makeTruncatedPdf())).code);
+  });
+
+  it('reports a form, and the parts of it that cannot carry over into an export', async () => {
+    expect((await loadSource(await letter(1), 'plain.pdf')).source.form).toBeUndefined();
+    expect((await loadSource(await makeFormPdf(), 'form.pdf')).source.form).toEqual({ xfa: false, signed: false });
+    expect((await loadSource(await makeFormPdf({ xfa: true }), 'form.pdf')).source.form).toEqual({ xfa: true, signed: false });
+    expect((await loadSource(await makeFormPdf({ signed: true }), 'form.pdf')).source.form).toEqual({ xfa: false, signed: true });
   });
 
   it('reports a file the parser itself rejects as damaged', async () => {

@@ -6,7 +6,7 @@
 
 PageSmith reads files with the browser's File API and does every step on your device: parsing, rendering, reordering, merging, splitting, annotating and decrypting. It has no backend. Everything is bundled, the production build pins all requests to its own origin with a Content-Security-Policy, and once installed the app works offline.
 
-PageSmith is at version 0.2.0 and under active development.
+Use it at **[radmagelabs.com/pagesmith](https://radmagelabs.com/pagesmith/)**. PageSmith is at version 0.2.1 and under active development.
 
 ![PageSmith with two merged PDFs open, a highlighted heading and a text note being edited](screenshots/pagesmith-edit-light.png)
 
@@ -37,6 +37,8 @@ The sample document in these screenshots was generated for them; its contents ar
 - Extract the selected pages; split by ranges (`1-3, 5, 8-`) or every N pages
 - Splits that produce several files download as one ZIP (stored, not recompressed)
 - Long builds show progress and can be canceled
+- Fillable form fields keep working in every export, including merges. When two merged files use the same field name, the later copy is renamed (`name_2`) so the two stay separate.
+- Pages you leave out aren't carried inside the export, even when a link, form field or comment on a kept page pointed at them
 
 **Overlays**: text, signature images (PNG/JPEG), highlights and boxes
 - Select any overlay later to move it (drag or arrow keys), resize it (round handle; text scales its font size), recolor it, edit its text, duplicate it (Ctrl+D) or delete it
@@ -51,13 +53,14 @@ Overlays add **new** content on top of a page. Editing a PDF's existing text, or
 - Updates download in the background and wait for you to click **Reload**. Unexported work triggers a confirmation; nothing reloads on its own.
 - Light/dark/system themes and a full keyboard shortcut list (press `?`)
 - Responsive layout with drawers on tablets and phones
-- The About dialog links to the license, the third-party notices (both ship with the app) and the source code
+- The About dialog links to the license, the third-party notices (both ship with the app), the source code and RadMage Labs
 
 ## Privacy
 
 - Document contents are never uploaded, logged, or written to storage, and passwords are never stored. The only thing PageSmith saves is your theme choice.
 - Only the page canvas is rendered (no annotation, link or XFA layers), so scripts and links embedded in a PDF never run. pdf.js's scripting sandbox is not even shipped.
 - Exports get a fresh document catalog, with no document JavaScript or OpenAction. Page `/AA` actions are removed.
+- Pages you leave out of an export are not hidden inside it. References to them from links, form fields and comments on the pages you keep are cut, and the tests check exported files object by object for content that exists only on a left-out page. PageSmith is not a redaction tool, though: everything on the pages you keep, including anything hidden on them, stays in the file.
 - Untrusted strings reach the page only through `textContent`. Colors are validated, and images are type-checked by their magic bytes.
 - Encryption is never silently ignored. Unlocked documents are decrypted in memory only, and the app tells you that exports are not password-protected.
 
@@ -68,11 +71,13 @@ Requires Node 20 or newer. The browser tests use the installed Google Chrome.
 ```sh
 npm install
 npm run dev          # http://localhost:5173 (no service worker or CSP in dev)
-npm run build        # type-check + production build into dist/
+npm run build        # type-check, notices check, production build into dist/
 npm run preview      # serve dist/ on http://localhost:4173 (real PWA, offline and CSP behavior)
 ```
 
-`dist/` is a static site. Serve it over HTTP(S); opening `index.html` from disk does not work, because module workers and service workers need HTTP.
+`dist/` is a static site. Serve it over HTTP(S); opening `index.html` from disk does not work, because module workers and service workers need HTTP. It works under any path; radmagelabs.com serves it at `/pagesmith/` from GitHub Pages, which the `Deploy to GitHub Pages` workflow publishes when it is run by hand.
+
+`THIRD-PARTY-NOTICES.txt` is generated from `package-lock.json`. After changing dependencies, run `npm run notices`; the build refuses an out-of-date file.
 
 ### Tests
 
@@ -80,6 +85,7 @@ npm run preview      # serve dist/ on http://localhost:4173 (real PWA, offline a
 npm test             # unit tests and independent-reader checks (Vitest)
 npm run test:e2e     # browser tests, desktop and mobile (Playwright; run npm run build first)
 npm run test:perf    # 100/300/500-page and 55 MB timing runs, written to test-results/perf.json
+npm run test:engines # the browser tests in Firefox and WebKit (run npx playwright install firefox webkit once)
 ```
 
 The independent-reader checks re-read exports with PDFium (as WebAssembly) and Xpdf's `pdftotext`. `pdftotext` must be on your PATH; without it those checks are skipped, not failed. Test PDFs are generated by the suites, so no sample documents are stored in the repository.
@@ -119,25 +125,25 @@ tests/
 ## Known limitations
 
 - **Overlay text:** CJK, Hebrew, Arabic, Indic and other scripts that need shaping are not supported; they export as `?`, and the panel says so before export.
-- **Existing PDF content:** existing text and existing annotations can't be edited. Form fields copied from merged files can lose their form binding.
+- **Existing PDF content:** existing text and existing annotations can't be edited.
+- **Forms:** an XFA form layer isn't carried over (its standard form fields are), a digital signature can't stay valid in an exported copy, and calculations that rely on document-level scripts stop working. PageSmith says so when you open such a file.
 - **Exports aren't re-encrypted:** an unlocked file is exported without a password.
 - **Search:** matches within a single text run, so phrases split across lines or runs aren't found. Hit boxes are proportional estimates, and scanned pages need OCR (not included).
 - **Files larger than 512 MB are rejected.**
 - **Reordering in the main preview:** you can't drag pages there; reorder in the thumbnail sidebar instead.
-- **Browsers:** the automated tests run in Google Chrome on desktop and in Chrome's Android phone emulation, and the main flows have been checked in Firefox 158. Safari and real mobile devices have not been tested yet.
+- **Browsers:** the automated tests run in Google Chrome (desktop, and Android phone emulation), Firefox and WebKit, the engine behind Safari, including an emulated iPhone. Real iPhones and Android phones have not been tested yet, and touch reordering is only tested in Chrome.
 
 ## Roadmap
 
 Planned next, roughly in order:
 
 1. **Password-protect exports**, so a file that was unlocked can be saved with a password again.
-2. **Keep form fields working when merging** files that contain fillable forms.
-3. **Better search**: phrases that span lines or text runs, with exact highlight boxes.
-4. **Drag to reorder in the main preview**, not just the thumbnail sidebar.
-5. **Testing beyond Chrome**: automated Firefox and Safari runs, and real phones.
-6. **CJK overlay text** with an optional font download (about 16 MB per language, fetched only when needed).
-7. **OCR for scanned pages**, as an optional download.
-8. **Right-to-left and Indic overlay text**, which needs a text-shaping engine.
+2. **Better search**: phrases that span lines or text runs, with exact highlight boxes.
+3. **Drag to reorder in the main preview**, not just the thumbnail sidebar.
+4. **Testing on real phones**, iOS and Android.
+5. **CJK overlay text** with an optional font download (about 16 MB per language, fetched only when needed).
+6. **OCR for scanned pages**, as an optional download.
+7. **Right-to-left and Indic overlay text**, which needs a text-shaping engine.
 
 ## License
 

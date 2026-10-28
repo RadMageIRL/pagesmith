@@ -13,9 +13,9 @@ self.addEventListener('install', event => {
 
 self.addEventListener('activate', event => {
   // Keep the previous version's cache too: another tab may still be running it and lazily load a
-  // chunk. Anything older is removed.
+  // chunk. Anything older is removed. caches.keys() lists caches in the order they were created.
   event.waitUntil(caches.keys().then(keys => {
-    const ours = keys.filter(k => k.startsWith('pagesmith-')).sort();
+    const ours = keys.filter(k => k.startsWith('pagesmith-'));
     const keep = new Set([CACHE, ...ours.filter(k => k !== CACHE).slice(-1)]);
     return Promise.all(keys.filter(k => k.startsWith('pagesmith-') && !keep.has(k)).map(k => caches.delete(k)));
   }).then(() => self.clients.claim()));

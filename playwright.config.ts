@@ -11,7 +11,6 @@ export default defineConfig({
   reporter: [['list']],
   use: {
     baseURL: 'http://localhost:4173',
-    channel: 'chrome',
     acceptDownloads: true,
     trace: 'retain-on-failure',
   },
@@ -20,6 +19,10 @@ export default defineConfig({
     { name: 'mobile', use: { ...devices['Pixel 7'], channel: 'chrome' }, testMatch: /mobile.spec.ts/ },
     // Timing runs alone (npm run test:perf) so parallel tests don't skew the numbers.
     { name: 'perf', use: { ...devices['Desktop Chrome'], channel: 'chrome', viewport: { width: 1400, height: 900 } }, testMatch: /perf.spec.ts/ },
+    // Other engines (npm run test:engines; needs `npx playwright install firefox webkit` once).
+    { name: 'firefox', use: { ...devices['Desktop Firefox'], viewport: { width: 1400, height: 900 } }, testIgnore: [/mobile.spec.ts/, /perf.spec.ts/] },
+    { name: 'webkit', use: { ...devices['Desktop Safari'], viewport: { width: 1400, height: 900 } }, testIgnore: [/mobile.spec.ts/, /perf.spec.ts/] },
+    { name: 'webkit-iphone', use: { ...devices['iPhone 14'] }, testMatch: /mobile.spec.ts/ },
   ],
   webServer: {
     command: 'npx vite preview --port 4173 --strictPort',

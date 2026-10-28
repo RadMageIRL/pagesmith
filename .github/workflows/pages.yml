@@ -1,0 +1,54 @@
+# Builds PageSmith and deploys it to GitHub Pages, where radmagelabs.com/pagesmith/ proxies it.
+# It runs only by hand (Actions tab, "Run workflow", or `gh workflow run pages.yml`), so a push
+# never publishes by accident. Needs the repo's Pages source set to "GitHub Actions".
+# The unit tests and the browser tests run first; a failing build is not deployed.
+name: Deploy to GitHub Pages
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Unit tests
+        run: npm test
+      - name: Build (type check, notices check, production build)
+        run: npm run build
+      - name: Browser tests in Chrome, desktop and mobile
+        run: npm run test:e2e
+        env:
+          CI: true
+      # The same commit builds the same files anywhere, so this list can be compared with a local
+      # build (cd dist && sha256sum of every file) to confirm what was deployed.
+      - name: SHA-256 of every deployed file
+        run: cd dist && find . -type f | LC_ALL=C sort | xargs sha256sum
+      - uses: actions/configure-pages@v6
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5

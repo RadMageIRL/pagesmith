@@ -204,8 +204,9 @@ test('the production build carries a strict Content-Security-Policy', async ({ r
 test('the license and third-party notices ship with the app and are linked from About', async ({ page, request }) => {
   await page.locator('#about-button').click();
   const links = page.locator('#about-dialog .about-links a');
-  await expect(links).toHaveText(['License', 'Third-party notices', 'Source code']);
+  await expect(links).toHaveText(['License', 'Third-party notices', 'Source code on GitHub', 'More from RadMage Labs']);
   await expect(links.nth(2)).toHaveAttribute('href', 'https://github.com/RadMageIRL/pagesmith');
+  await expect(links.nth(3)).toHaveAttribute('href', 'https://radmagelabs.com/');
   for (const [index, expected] of [[0, 'GNU GENERAL PUBLIC LICENSE'], [1, 'PageSmith: third-party notices']] as const) {
     const response = await request.get(`/${await links.nth(index).getAttribute('href')}`);
     expect(response.ok()).toBe(true);

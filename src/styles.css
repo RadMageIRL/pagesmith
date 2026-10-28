@@ -104,7 +104,8 @@ h1::after { content: "_"; color: var(--accent); animation: blink 1.15s steps(1) 
 .link-button:disabled { opacity: .4; cursor: default; }
 .link-button:not(:disabled):hover { color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
 
-.workspace { display: grid; grid-template-columns: var(--sidebar-w) minmax(0, 1fr) var(--panel-w); min-height: 0; position: relative; }
+/* clip keeps the off-canvas drawers (tablet and phone) from widening the page; WebKit counts them otherwise. */
+.workspace { display: grid; grid-template-columns: var(--sidebar-w) minmax(0, 1fr) var(--panel-w); min-height: 0; position: relative; overflow: hidden; overflow: clip; }
 
 /* --- thumbnails --- */
 .sidebar { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--border); background: var(--surface); }
@@ -285,6 +286,10 @@ dialog::backdrop { background: rgba(0, 0, 0, .55); backdrop-filter: blur(2px); }
 .busy-actions .button { padding: 6px 10px; font-size: 12px; }
 .update-bar { position: fixed; z-index: 65; left: 50%; top: 10px; transform: translateX(-50%); display: flex; align-items: center; gap: 10px; max-width: calc(100vw - 24px); padding: 8px 10px 8px 14px; border: 1px solid var(--accent); border-radius: 6px; background: var(--surface); box-shadow: var(--shadow); font-size: 12px; }
 .update-bar .button { padding: 6px 10px; }
+/* The toolbar wraps on phones, so an update notice at the top would cover its buttons. */
+@media (max-width: 720px) {
+  .update-bar { top: auto; bottom: 46px; left: 12px; right: 12px; transform: none; max-width: none; justify-content: space-between; }
+}
 .about-scroll { max-height: min(46vh, 380px); overflow-y: auto; }
 select { margin-top: 5px; }
 .ov-text .ov-handle { right: -9px; bottom: -9px; }

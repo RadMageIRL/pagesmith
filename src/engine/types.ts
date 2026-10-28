@@ -28,6 +28,11 @@ export interface SourceDoc {
   protection: Protection;
   /** True for pages PageSmith created (blank pages). */
   generated?: boolean;
+  /**
+   * Set when the file has an interactive form. Its fields carry over into exports; an XFA layer
+   * doesn't, and a digital signature can't survive being written into a new file.
+   */
+  form?: { xfa: boolean; signed: boolean };
 }
 
 /** One page in the working document: a pointer into a source plus PageSmith's extra rotation. */

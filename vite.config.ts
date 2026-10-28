@@ -51,7 +51,8 @@ function licenseFiles(): Plugin {
 
 /**
  * Writes dist/sw.js from src/sw-template.js with a precache list of every built file and a version
- * derived from their contents, so any change to the app produces a new service worker.
+ * derived from the package version and their contents, so any change to the app produces a new service
+ * worker, and building the same sources twice produces identical files.
  */
 function serviceWorker(): Plugin {
   let config: ResolvedConfig;
@@ -73,7 +74,8 @@ function serviceWorker(): Plugin {
       const precache = files.filter(f => f !== 'sw.js' && !f.endsWith('.map')).sort();
       const hash = createHash('sha256');
       for (const f of precache) hash.update(f).update(readFileSync(join(outDir, f)));
-      const version = `${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${hash.digest('hex').slice(0, 12)}`;
+      // No date or other build-time input: the same sources always build the same service worker.
+      const version = `${JSON.parse(readFileSync('package.json', 'utf8')).version}-${hash.digest('hex').slice(0, 12)}`;
       const template = readFileSync('src/sw-template.js', 'utf8');
       const urls = ['./', ...precache.map(f => `./${f}`)];
       writeFileSync(join(outDir, 'sw.js'), template.replace('__VERSION__', version).replace('__PRECACHE__', JSON.stringify(urls, null, 0)));

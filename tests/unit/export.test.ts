@@ -1,13 +1,15 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { PDFDocument, PDFName } from '@cantoo/pdf-lib';
+import { PDFDict, PDFDocument, PDFName, PDFRawStream, PDFString, decodePDFRawStream } from '@cantoo/pdf-lib';
 import { unzipSync } from 'fflate';
-import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
+import { OPS, getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { EMPTY_STATE, addOverlay, addPages, deletePages, movePages, pagesForSource, rotatePages, type DocState } from '../../src/commands/state';
 import { createBlank, loadSource } from '../../src/engine/load';
 import { CancelledError } from '../../src/engine/types';
 import { buildPdf, zipFiles, type SourceHandle } from '../../src/export/export';
 import { TEXT_BASELINE, type Overlay } from '../../src/overlay/types';
-import { a4Landscape, letter, makePdf, makePng } from '../fixtures';
+import { CONFIDENTIAL, a4Landscape, findMarkers, inspectWithQpdf, letter, makeConfidentialPdf, makeFormPdf, makeLinkedPdf, makePdf, makePng } from '../fixtures';
 import { loadFont } from '../fontpath';
 
 async function setup(...files: Uint8Array[]) {
@@ -42,7 +44,7 @@ describe('buildPdf', () => {
     const doc = await PDFDocument.load(out, { updateMetadata: false });
     expect(doc.getPageCount()).toBe(1);
     expect(doc.getPage(0).getSize()).toEqual({ width: 612, height: 792 });
-    expect(doc.getProducer()).toMatch(/PageSmith/);
+    expect(doc.getProducer()).toBe(`PageSmith ${JSON.parse(readFileSync(join(import.meta.dirname, '..', '..', 'package.json'), 'utf8')).version}`);
   });
 
   it('merges files with different page sizes, preserving each size and order', async () => {
@@ -208,5 +210,149 @@ describe('overlays in export', () => {
     s = deletePages(s, [state.pages[0].id]);
     const pages = await textOf(await buildPdf(s.pages, s.overlays, lookup, { loadFont }));
     expect(pages.flat().map(i => i.str)).toEqual(['L2']);
+  });
+});
+
+describe('forms and pages left out', () => {
+  const fieldsOf = async (bytes: Uint8Array) => (await inspectWithQpdf(bytes)).fields.map(f => `${f.fullname}=${String(f.value)}@p${f.pageposfrom1}`);
+  const SOURCE_FIELDS = ['name=u:Ada Lovelace@p1', 'agree=/Yes@p1', 'color=u:Green@p1', 'size=/1@p1', 'size=/1@p1', 'size=/1@p1', 'name=u:Ada Lovelace@p2', 'notes=u:Second page only@p2'];
+
+  it('keeps fillable form fields and their values (read back by qpdf and pdf-lib)', async () => {
+    const form = await makeFormPdf();
+    expect(await fieldsOf(form)).toEqual(SOURCE_FIELDS);
+    const { state, lookup } = await setup(form);
+    const out = await buildPdf(state.pages, [], lookup);
+    const report = await inspectWithQpdf(out);
+    expect(report.hasForm).toBe(true);
+    expect(await fieldsOf(out)).toEqual(SOURCE_FIELDS);
+    // The default resources (the fonts fields are typed in) come along too.
+    const fontsOf = async (bytes: Uint8Array) => {
+      const doc = await PDFDocument.load(bytes);
+      const dr = doc.catalog.lookup(PDFName.of('AcroForm'), PDFDict).lookup(PDFName.of('DR'), PDFDict);
+      return dr.lookup(PDFName.of('Font'), PDFDict).keys().map(k => k.toString());
+    };
+    expect(await fontsOf(out)).toEqual(await fontsOf(form));
+    expect((await fontsOf(out)).length).toBeGreaterThan(0);
+    const appearance = (await PDFDocument.load(out)).catalog.lookup(PDFName.of('AcroForm'), PDFDict).lookup(PDFName.of('DA'), PDFString);
+    expect(appearance.decodeText()).toBe('/Helv 0 Tf 0 g');
+    const filled = (await PDFDocument.load(out)).getForm();
+    expect(filled.getTextField('name').getText()).toBe('Ada Lovelace');
+    expect(filled.getCheckBox('agree').isChecked()).toBe(true);
+    expect(filled.getDropdown('color').getSelected()).toEqual(['Green']);
+  });
+
+  it('keeps the fields of each merged copy separate, renaming only the clashes', async () => {
+    const { state, lookup } = await setup(await makeFormPdf(), await makeFormPdf());
+    const fields = await fieldsOf(await buildPdf(state.pages, [], lookup));
+    expect(fields).toEqual([...SOURCE_FIELDS, ...SOURCE_FIELDS.map(f => f.replace(/^(\w+)=(.*)@p(\d)$/, (_, n, v, p) => `${n}_2=${v}@p${Number(p) + 2}`))]);
+  });
+
+  it('extracting pages keeps only the fields and widgets on those pages', async () => {
+    const { state, lookup } = await setup(await makeFormPdf());
+    const cases: [number, string[]][] = [[0, SOURCE_FIELDS.slice(0, 6)], [1, ['name=u:Ada Lovelace@p1', 'notes=u:Second page only@p1']]];
+    for (const [index, expected] of cases) {
+      const out = await buildPdf([state.pages[index]], [], lookup);
+      expect(await fieldsOf(out)).toEqual(expected);
+      // "name" also has a widget on the page left out; it must not stay in the file without a page.
+      expect((await inspectWithQpdf(out)).widgetObjects).toBe(expected.length);
+    }
+  });
+
+  it('leaves field appearances as the file had them, including NeedAppearances', async () => {
+    const { state, lookup } = await setup(await makeFormPdf({ needAppearances: true }));
+    const out = await PDFDocument.load(await buildPdf(state.pages, [], lookup));
+    const acroForm = out.catalog.lookup(PDFName.of('AcroForm'), PDFDict);
+    expect(acroForm.get(PDFName.of('NeedAppearances'))?.toString()).toBe('true');
+    const appearances = out.getForm().getFields().map(f => `${f.getName()}:${f.acroField.getWidgets().every(w => w.getAppearances() !== undefined)}`);
+    expect(appearances.sort()).toEqual(['agree:true', 'color:true', 'name:true', 'notes:false', 'size:true']);
+  });
+
+  it('documents without a form get no form', async () => {
+    const { state, lookup } = await setup(await letter(2));
+    expect((await inspectWithQpdf(await buildPdf(state.pages, [], lookup))).hasForm).toBe(false);
+  });
+
+  /** Every stream's decoded text, to look for page 3's words anywhere in a file. */
+  async function streamText(bytes: Uint8Array): Promise<string> {
+    const doc = await PDFDocument.load(bytes);
+    const parts: string[] = [];
+    for (const [, obj] of doc.context.enumerateIndirectObjects()) {
+      if (obj instanceof PDFRawStream) parts.push(new TextDecoder('latin1').decode(decodePDFRawStream(obj).decode()));
+    }
+    return parts.join('\n').toUpperCase();
+  }
+  const SECRET_HEX = Buffer.from('SECRET-PAGE-THREE', 'latin1').toString('hex').toUpperCase();
+
+  it('a page left out of an export is not hidden inside it, even when a kept page links to it', async () => {
+    const linked = await makeLinkedPdf();
+    expect(await streamText(linked)).toContain(SECRET_HEX);
+    const { state, lookup } = await setup(linked);
+    for (const kept of [[state.pages[0]], [state.pages[0], state.pages[1]]]) {
+      const out = await buildPdf(kept, [], lookup);
+      expect((await inspectWithQpdf(out)).pageObjects).toBe(kept.length);
+      expect(await streamText(out)).not.toContain(SECRET_HEX);
+      expect(await labels(out)).toEqual(kept.map(p => `L${p.sourceIndex + 1}`));
+    }
+  });
+
+  it('links between exported pages still land on the right page, in any order', async () => {
+    const { state, lookup } = await setup(await makeLinkedPdf());
+    for (const order of [[0, 1, 2], [2, 0, 1]]) {
+      const out = await buildPdf(order.map(i => state.pages[i]), [], lookup);
+      expect((await inspectWithQpdf(out)).pageObjects).toBe(3);
+      const task = getDocument({ data: out.slice(), verbosity: 0 });
+      const doc = await task.promise;
+      const linkPage = await doc.getPage(order.indexOf(0) + 1);
+      const [link] = (await linkPage.getAnnotations()).filter(a => a.subtype === 'Link');
+      expect(await doc.getPageIndex(link.dest[0])).toBe(order.indexOf(2));
+      await task.destroy();
+    }
+  });
+});
+
+describe('confidential content on pages left out', () => {
+  const MARKERS = Object.values(CONFIDENTIAL);
+
+  it('the marker check finds every marker in the source, with both readers', async () => {
+    expect(await findMarkers(await makeConfidentialPdf(), MARKERS)).toEqual({ qpdf: MARKERS, pdfLib: MARKERS });
+  });
+
+  it('no object or decoded stream of an export holds anything unique to a page left out', async () => {
+    const { state, lookup } = await setup(await makeConfidentialPdf());
+    const [p1, p2] = state.pages;
+    for (const kept of [[p1], [p1, p2], [p2, p1]]) {
+      const out = await buildPdf(kept, [], lookup);
+      expect(await findMarkers(out, MARKERS)).toEqual({ qpdf: [], pdfLib: [] });
+      expect((await inspectWithQpdf(out)).pageObjects).toBe(kept.length);
+    }
+  });
+
+  it('keeps what belongs to the exported pages: their text, shared image, comment, field and links between them', async () => {
+    const { state, lookup } = await setup(await makeConfidentialPdf());
+    const out = await buildPdf(state.pages.slice(0, 2), [], lookup);
+    expect(await labels(out)).toEqual(['K1', 'K2']);
+    expect((await inspectWithQpdf(out)).fields.map(f => `${f.fullname}=${String(f.value)}@p${f.pageposfrom1}`)).toEqual(['contact.name=u:KEEP-VALUE@p1']);
+    const task = getDocument({ data: out.slice(), verbosity: 0 });
+    const doc = await task.promise;
+    const page1 = await doc.getPage(1);
+    const annotations = await page1.getAnnotations();
+    expect(annotations.filter(a => a.subtype === 'Text').map(a => a.contentsObj?.str)).toEqual(['KEEP-NOTE-ONE']);
+    // The link to page 2 still works; the two that pointed at page 3 now point nowhere.
+    const targets = await Promise.all(annotations.filter(a => a.subtype === 'Link').map(async a => (a.dest?.[0] ? doc.getPageIndex(a.dest[0]) : null)));
+    expect(targets).toEqual([null, null, 1]);
+    // The image page 1 shares with page 3 is still drawn.
+    expect((await page1.getOperatorList()).fnArray).toContain(OPS.paintImageXObject);
+    await task.destroy();
+  });
+
+  it('when the page it points at is exported too, a reply keeps its link to that comment', async () => {
+    const { state, lookup } = await setup(await makeConfidentialPdf());
+    const task = getDocument({ data: (await buildPdf(state.pages, [], lookup)).slice(), verbosity: 0 });
+    const doc = await task.promise;
+    const reply = (await (await doc.getPage(1)).getAnnotations()).find(a => a.subtype === 'Text');
+    const original = (await (await doc.getPage(3)).getAnnotations()).find(a => a.subtype === 'Text');
+    expect(original?.contentsObj?.str).toBe(CONFIDENTIAL.note);
+    expect(reply?.inReplyTo).toBe(original?.id);
+    await task.destroy();
   });
 });
